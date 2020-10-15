@@ -1,0 +1,195 @@
+---
+title: "Machine Learning Final Project"
+author: "Roberto Rojas Esteban"
+date: "12-10-2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Overview
+
+With devices such as the Jawbone Up, Nike FuelBand, and Fitbit, it is possible to collect a large amount of personal activity data considerably inexpensively. These types of devices are part of quantified self-movement: a group of users who take action on themselves regularly to improve their health, to find patterns in their behavior, or because they are fans of technology and physical exercise. One thing that people do on a regular basis is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+In this project, we will use accelerometer data on the belt, forearm, arm, and dumbbell from 6 participants. They were asked to perform correctly and incorrectly barbell lifts in 5 different ways.
+
+The data consists of two types of data sets: training and test data (which will be used to validate the selected model).
+
+The central idea of the project is to predict how they performed the exercise. This is the variable "class" in the training set. You can use any of the other variables to predict.
+Our goal is to predict the labels of the observations in the test set.
+
+Below is the code that was used to create the model, estimate the out-of-sample error, and make predictions. A description of each step in the process is also included.
+
+More information is available from the website here: (http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+
+## Load Packages and Data
+
+```{r Packages}
+library(caret)
+library(ggplot2)
+library(rattle)
+library(corrplot)
+library(lattice)
+library(kernlab)
+library(randomForest)
+library(rpart)
+library(gbm)
+```
+
+```{r Data}
+if (!file.exists("MachineLearning")){
+  dir.create("MachineLearning")
+  url_train<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+  url_test<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+  download.file(url_train, destfile = "./MachineLearning/pml-training.csv")
+  download.file(url_test, destfile="./MachineLearning/pml-testing.csv")
+}
+  traindata<-read.csv("./MachineLearning/pml-training.csv")
+  testdata<-read.csv("./MachineLearning/pml-testing.csv")
+```
+
+We see that there are 160 variables and 19622 observations in the training set, while 20 observations for the test set.
+
+## Cleaning the Data
+
+Eliminating unnecessary variables: Starting with N / A variables. Next, we proceed to review the variables that have zero or approximately zero variance.
+Now that we have finished eliminating the unnecessary variables, we can divide the training set into a validation and substraining set.
+Preparing the data for prediction by splitting the training data into 70% as train data and 30% as test data.
+```{r}
+set.seed(31824)
+traincsv <- traindata[,colMeans(is.na(traindata)) < .9] #removing NA columns
+traincsv <- traincsv[,-c(1:7)] #removing metadata which is irrelevant to the outcome
+
+nzv <- nearZeroVar(traincsv)
+traincsv <- traincsv[,-nzv]
+dim(traincsv)
+
+inTrain <- createDataPartition(y=traincsv$classe, p=0.7, list=F)
+train <- traincsv[inTrain,]
+valid <- traincsv[-inTrain,]
+```
+
+We will do a similar situation for the test data.
+
+```{r}
+set.seed(31824)
+testcsv<-testdata[,colMeans(is.na(testdata)) < .9]
+testcsv<-testcsv[,-c(1:7)]
+```
+
+With the cleaning process above, the number of variables for the analysis has been reduced to 53 only.
+
+### Correlation Analysis
+
+A correlation among variables is analysed before proceeding to the modeling procedures.
+
+```{r}
+corMatrix <- cor(traincsv[, -53])
+corrplot(corMatrix, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+
+To obtain the names of the variables we do the following:
+We use the "findCorrelation" function to search for highly correlated attributes with a cut off equal to 0.8
+
+```{r}
+highlyCorrelated = findCorrelation(corMatrix, cutoff=0.8)
+```
+
+We then obtain the names of highly correlated attributes:
+```{r}
+names(traindata)[highlyCorrelated]
+```
+
+## Creating and Testing the Models
+
+Here we will test a few popular models including: Decision Trees, Random Forest, Gradient Boosted Trees, and SVM. This is probably more than we will need to test, but just out of curiosity and good practice we will run them for comparison.
+
+Set up control for training to use 3-fold cross validation.
+
+```{r}
+control <- trainControl(method="cv", number=3, verboseIter=F)
+```
+
+### Model 1: Decision Tree
+
+```{r}
+mod_trees <- train(classe~., data=traincsv, method="rpart", trControl = control, tuneLength = 5)
+fancyRpartPlot(mod_trees$finalModel)
+```
+
+Prediction:
+
+```{r}
+pred_trees <- predict(mod_trees, valid)
+cmtrees <- confusionMatrix(pred_trees, factor(valid$classe))
+cmtrees
+```
+
+### Model 2: Random Forest
+
+```{r}
+#Random Forest
+
+model_rf <- train(classe~., data=traincsv, method="rf", trControl = control)
+
+pred_rf <- predict(model_rf, valid)
+cmrf <- confusionMatrix(pred_rf, factor(valid$classe))
+cmrf
+
+```
+
+### Model 3: Gradient Boosted Trees
+
+```{r}
+# Gradient Boosted Trees 
+set.seed(12345)
+controlgbm <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+mod_gbm <- train(classe~., data=traincsv, method="gbm", trControl = controlgbm, verbose = F)
+
+pred_gbm <- predict(mod_gbm, valid)
+cmgbm <- confusionMatrix(pred_gbm, factor(valid$classe))
+cmgbm
+
+```
+
+### Model 4: SVM
+```{r}
+# SVM
+mod_svm <- train(classe~., data=train, method="svmLinear", trControl = control, tuneLength = 5, verbose = F)
+
+pred_svm <- predict(mod_svm, valid)
+cmsvm <- confusionMatrix(pred_svm, factor(valid$classe))
+cmsvm
+```
+
+
+## Applying the best model to the validation data
+
+By comparing the accuracy rate values of the three models, it is clear the the "Random Forest" model is the winner. So will use it on the validation data.
+Applying the Selected Model to the Test Data
+
+The accuracy of the 4 regression modeling methods above are:
+
+    Random Forest : 1.0000
+    Decision Tree : 0.5393
+    GBM : 0.9715
+    SVM: 0.7777
+
+In that case, the Random Forest model will be applied to predict the 20 quiz results (testing dataset) as shown below.
+
+```{r}
+Results <- predict(model_rf, newdata=testcsv)
+Results
+```
